@@ -211,7 +211,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             ok = logops(type=args.type).checkIntegrity()
             return 0 if ok else 2
     except Exception as e:
-        print(f"Error: {e}", file=__import__("sys").stderr)
+        print(f"Error: {e}", file=sys.stderr)
         return 2
 
     return 2

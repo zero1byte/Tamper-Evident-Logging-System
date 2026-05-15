@@ -28,12 +28,21 @@ def getPath() -> str:
 
 @dataclass(frozen=True)
 class log:
+    """Immutable log entry in the tamper-evident chain.
+
+    Attributes:
+        timestamp: ISO-8601 timestamp when the event occurred.
+        type: Log type ('auth', 'sys', 'app').
+        description: Human-readable description of the event.
+        hash: SHA-256 hash linking to the previous entry.
+    """
+
     timestamp: str
     type: str
     description: str
     hash: str
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "timestamp", self.timestamp.strip())
         object.__setattr__(self, "type", self.type.strip())
         object.__setattr__(self, "description", self.description.strip())
@@ -79,13 +88,22 @@ class log:
         )
 
     def toStr(self, *, quote_description: bool = True) -> str:
+        """Serialize the log entry to a single-line format suitable for storage.
+
+        Args:
+            quote_description: If True, wrap description in single quotes.
+
+        Returns:
+            Formatted log line with trailing newline.
+        """
         desc = self.description
         if quote_description:
             desc = f"'{desc}'"
         return f"{self.timestamp} {self.type} {self.hash} {desc}\n"
         
         
-    def view(self):
+    def view(self) -> None:
+        """Print the log entry in a human-readable format."""
         print(f"Timestamp : {self.timestamp}")
         print(f"Type : {self.type}")
         print(f"Hash : {self.hash}")
@@ -93,17 +111,33 @@ class log:
 
 
 class StorageFiles:
-    def __init__(self, path: Optional[str] = None, logType: str = "sys"):
+    """Manage log file storage, rotation, and initialization.
+
+    Args:
+        path: Directory to store log files (defaults to ./logStorage/).
+        logType: Log category ('auth', 'sys', 'app').
+    """
+
+    def __init__(self, path: Optional[str] = None, logType: str = "sys") -> None:
         self.path = path if path is not None else getPath()
         self.logtype = logType
-    
-    #check if log categories if exists and return file path
-    def getLogFilePath(self):
-        if(self.logtype not in LOGS_TYPES):
-            print(f"Invalid log type : {self.logtype}")
-            print("Valid Logs Types : ",LOGS_TYPES)
-            return
-        filePath = os.path.join(self.path, self.logtype + "." + FILE_TYPE)
+
+    def getLogFilePath(self) -> Optional[str]:
+        """Get or initialize the log file for this type.
+
+        Handles:
+        - Validating the log type
+        - Rotating the file if it exceeds MAX_LOG_FILE_SIZE
+        - Creating a fresh file with genesis entry if missing
+
+        Returns:
+            Absolute path to the log file, or None if type is invalid.
+        """
+        if self.logtype not in LOGS_TYPES:
+            print(f"Invalid log type: {self.logtype}")
+            print(f"Valid log types: {LOGS_TYPES}")
+            return None
+        filePath = os.path.join(self.path, f"{self.logtype}.{FILE_TYPE}")
 
         # Rotate if file grows too large.
         if os.path.exists(filePath):
@@ -116,13 +150,14 @@ class StorageFiles:
                 # Best-effort rotation; if it fails, keep using the same file.
                 pass
 
-        # Check if first log file exists
-        if(not os.path.exists(filePath)):
-            with open(filePath,'+a') as file:
+        # Initialize file with genesis entry if missing.
+        if not os.path.exists(filePath):
+            with open(filePath, "a", encoding="utf-8") as file:
                 file.write(f"{NTP()} {self.logtype} {FIRST_RANDOM_HASH} 'Log file created'\n")
 
-            # Best-effort permissions: os.chmod is limited on Windows.
+            # Best-effort permissions: os.chmod has limited effect on Windows.
             if os.name != "nt":
                 os.chmod(filePath, stat.S_IRUSR | stat.S_IWUSR)
+
         return filePath
     
