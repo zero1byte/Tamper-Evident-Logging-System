@@ -8,6 +8,12 @@ from hashmodule import hashUtils
 from logs_storage import FIRST_RANDOM_HASH, StorageFiles, log
 from NTP import NTP
 
+try:
+    from tabulate import tabulate
+    HAS_TABULATE = True
+except ImportError:
+    HAS_TABULATE = False
+
 
 class logops:
     """Manage tamper-evident log operations: insert, view, and verify integrity.
@@ -103,8 +109,11 @@ class logops:
         self.current_log = entry
         return self.insert()
         
-    def view(self) -> bool:
+    def view(self, format_type: str = "text") -> bool:
         """Display all log entries in a human-readable format.
+
+        Args:
+            format_type: Output format ('text' or 'table'). Default is 'text'.
 
         Returns:
             True on success.
@@ -115,13 +124,52 @@ class logops:
         if not self.islogfileexists():
             raise FileNotFoundError("Log file does not exist.")
 
+        logs = []
         with open(self.logfilepath, "r", encoding="utf-8") as file:
             for line in file:
                 if not line.strip():
                     continue
-                logObj = log.fromStr(line)
+                logs.append(log.fromStr(line))
+
+        if format_type == "table":
+            self._view_as_table(logs)
+        else:
+            for logObj in logs:
                 logObj.view()
+
         return True
+
+    def _view_as_table(self, logs: list) -> None:
+        """Display logs as a formatted table.
+
+        Args:
+            logs: List of log entries to display.
+        """
+        if not logs:
+            print("No logs found.")
+            return
+
+        if HAS_TABULATE:
+            # Create table with full hash visible
+            headers = ["#", "Timestamp", "Type", "Hash (first 16 chars)", "Description"]
+            rows = []
+            for idx, log_entry in enumerate(logs, 1):
+                rows.append([
+                    idx,
+                    log_entry.timestamp,
+                    log_entry.type,
+                    log_entry.hash[:16] + "...",
+                    log_entry.description
+                ])
+            print(tabulate(rows, headers=headers, tablefmt="grid"))
+        else:
+            # Fallback to simple text table if tabulate is not available
+            print("\n" + "="*120)
+            print(f"{'#':<3} | {'Timestamp':<20} | {'Type':<6} | {'Hash (first 16)':<18} | Description")
+            print("="*120)
+            for idx, log_entry in enumerate(logs, 1):
+                print(f"{idx:<3} | {log_entry.timestamp:<20} | {log_entry.type:<6} | {log_entry.hash[:16]:<18} | {log_entry.description}")
+            print("="*120 + "\n")
         
     def checkIntegrity(self) -> bool:
         """Verify the integrity of the log chain by recomputing all hashes.
@@ -178,6 +226,7 @@ def _build_cli() -> argparse.ArgumentParser:
 
     p_view = sub.add_parser("view", help="View logs")
     p_view.add_argument("--type", required=True, choices=["app", "sys", "auth"], help="Log type")
+    p_view.add_argument("--format", choices=["text", "table"], default="text", help="Output format (default: text)")
 
     p_check = sub.add_parser("check", help="Verify log integrity")
     p_check.add_argument("--type", required=True, choices=["app", "sys", "auth"], help="Log type")
@@ -205,7 +254,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             logops(type=args.type).append(args.desc)
             return 0
         elif args.cmd == "view":
-            logops(type=args.type).view()
+            logops(type=args.type).view(format_type=args.format)
             return 0
         elif args.cmd == "check":
             ok = logops(type=args.type).checkIntegrity()
